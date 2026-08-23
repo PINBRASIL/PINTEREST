@@ -35,7 +35,8 @@ UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
       "(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36")
 
 COLUNAS_PINS = ["data", "palavra", "pin_id", "posicao", "saves", "comentarios",
-                "titulo", "dominio", "link", "imagem", "video", "criado_em"]
+                "titulo", "dominio", "link", "imagem", "largura", "altura",
+                "video", "criado_em"]
 COLUNAS_SUG = ["data", "palavra_base", "sugestao", "posicao"]
 
 
@@ -170,6 +171,8 @@ def ler_pin(item, posicao, palavra):
         "dominio": dominio,
         "link": link[:400],
         "imagem": img.get("url") or "",
+        "largura": img.get("width") or "",
+        "altura": img.get("height") or "",
         "video": "1" if (item.get("videos") or item.get("is_video")) else "0",
         "criado_em": data_criacao(item.get("created_at")),
     }
