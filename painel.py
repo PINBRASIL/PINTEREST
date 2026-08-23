@@ -72,6 +72,7 @@ def calcular(pins):
             "dominio": ult["dominio"],
             "link": ult["link"],
             "imagem": ult["imagem"],
+            "formato": formato_imagem(ult.get("largura"), ult.get("altura")),
             "video": ult["video"] == "1",
             "saves": num(ult["saves"]),
             "delta": delta,
@@ -150,15 +151,47 @@ def resumo_dominios(calc):
 
 def classificar_dominio(dom):
     d = dom.lower()
-    if any(x in d for x in ("kiwify", "hotmart", "greenn", "eduzz", "monetizze", "braip")):
+    infop = ("kiwify", "hotmart", "greenn", "eduzz", "monetizze", "braip",
+             "ticto", "cakto", "perfectpay", "kirvano")
+    # encurtadores de afiliado contam como afiliado, nao como blog
+    afil = ("shopee", "shp.ee", "amazon", "amzn.to", "amzlink", "amzn.",
+            "mercadolivre", "meli.la", "mercadolive", "shein", "aliexpress",
+            "temu", "magazineluiza", "magalu", "americanas", "walmart",
+            "target", "kohls", "urlgeni", "onelink", "bit.ly", "shorturl")
+    loja = ("etsy", "shopify", "nuvemshop", "lojaintegrada", "cartpanda", "yampi")
+    social = ("instagram", "youtube", "youtu.be", "tiktok", "facebook",
+              "whatsapp", "wa.me", "linktr", "beacons")
+    if any(x in d for x in infop):
         return "INFOPRODUTO"
-    if any(x in d for x in ("shopee", "amazon", "mercadolivre", "shein", "aliexpress", "magazineluiza", "americanas")):
-        return "PRODUTO / AFILIADO"
-    if any(x in d for x in ("etsy", "shopify", "nuvemshop", "lojaintegrada")):
+    if any(x in d for x in afil):
+        return "AFILIADO"
+    if any(x in d for x in loja):
         return "LOJA PROPRIA"
+    if any(x in d for x in social):
+        return "REDE SOCIAL"
     if "pinterest" in d:
         return "SO PINTEREST"
     return "BLOG / CONTEUDO"
+
+
+def formato_imagem(larg, alt):
+    """Descobre o formato do criativo. Isso importa muito no Pinterest."""
+    try:
+        l, a = int(float(larg)), int(float(alt))
+        if l <= 0 or a <= 0:
+            return ""
+    except (TypeError, ValueError):
+        return ""
+    r = a / l
+    if r >= 1.85:
+        return "1:2 longo"
+    if r >= 1.35:
+        return "2:3 padrao"
+    if r >= 1.15:
+        return "4:5"
+    if r >= 0.9:
+        return "quadrado"
+    return "deitado"
 
 
 def sugestoes_novas(sug, janela=14):
@@ -181,25 +214,41 @@ def e(t):
     return html.escape(str(t if t is not None else ""))
 
 
-def cartao_pin(p):
-    idade = f'<span class="tag">{p["idade"]}d de idade</span>' if p["idade"] is not None else ""
-    video = '<span class="tag video">VIDEO</span>' if p["video"] else ""
-    vel = p["por_dia"] if p["por_dia"] is not None else "-"
-    img = e(p["imagem"]) or ""
-    destino = e(p["link"]) or f'https://www.pinterest.com/pin/{e(p["pin_id"])}/'
+def cartao_pin(p, mostrar_velocidade=True):
+    url_pin = f'https://br.pinterest.com/pin/{e(p["pin_id"])}/'
+    tags = []
+    if p.get("formato"):
+        tags.append(f'<span class="tag">{e(p["formato"])}</span>')
+    if p.get("idade") is not None:
+        tags.append(f'<span class="tag">{p["idade"]}d</span>')
+    if p.get("video"):
+        tags.append('<span class="tag video">VIDEO</span>')
+
+    if mostrar_velocidade and p.get("por_dia") is not None:
+        numero = f'<div class="vel">{p["por_dia"]} <small>saves/dia</small></div>'
+    else:
+        numero = f'<div class="vel azul">{p["saves"]:,} <small>saves</small></div>'.replace(",", ".")
+
+    destino = ""
+    if p.get("link"):
+        destino = (f'<a class="mini" href="{e(p["link"])}" target="_blank" '
+                   f'rel="noopener">ir ao destino &rarr;</a>')
+
     return f"""
-    <a class="pin" href="{destino}" target="_blank" rel="noopener">
-      <div class="thumb"><img loading="lazy" src="{img}" alt=""></div>
+    <div class="pin" data-nicho="{e(p["palavra"])}">
+      <a class="thumb" href="{url_pin}" target="_blank" rel="noopener">
+        <img loading="lazy" src="{e(p["imagem"])}" alt="">
+      </a>
       <div class="pin-corpo">
-        <div class="vel">{vel} <small>saves/dia</small></div>
+        {numero}
         <div class="titulo">{e(p["titulo"])[:90]}</div>
-        <div class="meta">
-          <span class="tag">{e(p["palavra"])}</span>
-          {idade}{video}
+        <div class="meta"><span class="tag nicho">{e(p["palavra"])}</span>{"".join(tags)}</div>
+        <div class="rodape">
+          <a class="mini forte" href="{url_pin}" target="_blank" rel="noopener">ver o pin</a>
+          {destino}
         </div>
-        <div class="rodape">{e(p["dominio"]) or "sem link"} &middot; {p["saves"]:,} saves</div>
       </div>
-    </a>""".replace(",", ".")
+    </div>"""
 
 
 def barra(valor, maximo, cor="var(--verde)"):
@@ -217,6 +266,18 @@ def montar(pins, sug):
     palavras = resumo_palavras(calc, pins, churn)
     dominios = resumo_dominios(calc)
     novas = sugestoes_novas(sug)
+
+    # galeria: melhores pins por saves, ate 10 de cada nicho.
+    # funciona desde o primeiro dia porque nao depende de velocidade.
+    por_nicho = defaultdict(list)
+    for c in calc:
+        if c["imagem"]:
+            por_nicho[c["palavra"]].append(c)
+    galeria = []
+    for palavra in sorted(por_nicho):
+        melhores = sorted(por_nicho[palavra], key=lambda x: -x["saves"])[:10]
+        galeria.extend(melhores)
+    nichos_galeria = sorted(por_nicho)
 
     acelerando = sorted(
         [c for c in calc if c["por_dia"] is not None and c["por_dia"] > 0],
@@ -275,6 +336,11 @@ def montar(pins, sug):
     html_avisos = "".join(
         f'<div class="aviso {tipo}">{e(txt)}</div>' for tipo, txt in avisos)
 
+    chips = '<button class="chip on" data-f="__todos">todos</button>' + "".join(
+        f'<button class="chip" data-f="{e(n)}">{e(n)}</button>' for n in nichos_galeria)
+    grade_galeria = "".join(cartao_pin(p, mostrar_velocidade=False) for p in galeria) \
+        or '<p class="dim">Sem imagens ainda.</p>'
+
     grade_acel = "".join(cartao_pin(p) for p in acelerando) or '<p class="dim">Precisa de pelo menos 2 dias de coleta.</p>'
     grade_novos = "".join(cartao_pin(p) for p in novos_pins) or '<p class="dim">Nenhum pin recente acelerando ainda.</p>'
 
@@ -332,6 +398,18 @@ overflow:hidden;text-decoration:none;color:inherit;display:block;transition:.15s
 .rodape{{font-size:10px;color:var(--dim);border-top:1px solid var(--linha);padding-top:6px;
 overflow:hidden;text-overflow:ellipsis;white-space:nowrap}}
 .legenda{{font-size:12px;color:var(--dim);margin-top:8px;line-height:1.6}}
+.chips{{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0 4px}}
+.chip{{background:var(--card);border:1px solid var(--linha);color:var(--dim);
+font-size:11px;padding:5px 11px;border-radius:20px;cursor:pointer;font-family:inherit}}
+.chip:hover{{border-color:var(--azul);color:var(--txt)}}
+.chip.on{{background:var(--azul);border-color:var(--azul);color:#04121f;font-weight:600}}
+.vel.azul{{color:var(--azul)}}
+.tag.nicho{{background:rgba(88,166,255,.14);color:var(--azul)}}
+.rodape a.mini{{color:var(--dim);text-decoration:none;font-size:10px;margin-right:9px}}
+.rodape a.mini:hover{{color:var(--azul);text-decoration:underline}}
+.rodape a.forte{{color:var(--azul)}}
+.pin{{display:flex;flex-direction:column}}
+a.thumb{{display:block}}
 </style></head><body><div class="wrap">
 
 <h1>Painel Pinterest</h1>
@@ -362,18 +440,27 @@ travaram o topo e voce nao fura isso.<br>
 muita gente postando e ninguem salvando.
 </p>
 
-<h2>2. Pins novos que estao subindo</h2>
+<h2>2. Galeria de criativos</h2>
+<p class="sub">Os pins mais salvos de cada nicho. Clique na imagem para abrir o pin no Pinterest.</p>
+<div class="chips">{chips}</div>
+<div class="grade" id="galeria">{grade_galeria}</div>
+<p class="legenda">Use o filtro acima para ver um nicho por vez. Repare no
+<b>formato</b> marcado em cada card: no Pinterest, 2:3 e o padrao que a plataforma
+mais distribui. Se os campeoes de um nicho sao todos 1:2 longos, e sinal de que ali
+o publico consome infografico, nao foto.</p>
+
+<h2>3. Pins novos que estao subindo</h2>
 <p class="sub">Criados nos ultimos {DIAS_PIN_NOVO} dias e ja ganhando saves. Esta e a lista mais importante do painel.</p>
 <div class="grade">{grade_novos}</div>
 <p class="legenda">Abra uns 10 e procure o que se <b>repete</b>: mesmo enquadramento? texto
 por cima da foto? titulo em pergunta ou em numero? Esse padrao e o modelo do seu proximo
 criativo - de anuncio, de post e de capa de ebook.</p>
 
-<h2>3. Pins com mais tracao no geral</h2>
+<h2>4. Pins com mais tracao no geral</h2>
 <p class="sub">Inclui pins antigos. Serve para entender o que ja e consolidado no nicho.</p>
 <div class="grade">{grade_acel}</div>
 
-<h2>4. Quem ja ganha dinheiro nesses nichos</h2>
+<h2>5. Quem ja ganha dinheiro nesses nichos</h2>
 <table>
 <tr><th>Site</th><th>Modelo</th><th class="n">Velocidade</th><th class="n">Pins</th></tr>
 {linhas_dom}
@@ -382,14 +469,27 @@ criativo - de anuncio, de post e de capa de ebook.</p>
 Se sao <b>lojas e marketplaces</b>, e terreno de afiliado. Se e so <b>blog</b>,
 a monetizacao ali e por anuncio e precisa de muito volume.</p>
 
-<h2>5. Palavras novas que o Pinterest comecou a sugerir</h2>
+<h2>6. Palavras novas que o Pinterest comecou a sugerir</h2>
 <p class="sub">O autocomplete e alimentado por busca real. Termo novo ali = gente digitando aquilo agora.</p>
 <table>
 <tr><th>Palavra nova</th><th>Apareceu buscando</th><th class="n">Desde</th></tr>
 {linhas_sug}
 </table>
 
-</div></body></html>"""
+</div>
+<script>
+document.querySelectorAll(".chip").forEach(function(b){{
+  b.addEventListener("click", function(){{
+    document.querySelectorAll(".chip").forEach(function(x){{x.classList.remove("on")}});
+    b.classList.add("on");
+    var f = b.dataset.f;
+    document.querySelectorAll("#galeria .pin").forEach(function(c){{
+      c.style.display = (f === "__todos" || c.dataset.nicho === f) ? "" : "none";
+    }});
+  }});
+}});
+</script>
+</body></html>"""
 
 
 def main():
