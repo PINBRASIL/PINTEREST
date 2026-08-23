@@ -75,6 +75,7 @@ def calcular(pins):
             "formato": formato_imagem(ult.get("largura"), ult.get("altura")),
             "video": ult["video"] == "1",
             "saves": num(ult["saves"]),
+            "comentarios": num(ult.get("comentarios")),
             "delta": delta,
             "dias": dias,
             "por_dia": round(delta / dias, 1) if dias > 0 else None,
@@ -224,18 +225,27 @@ def cartao_pin(p, mostrar_velocidade=True):
     if p.get("video"):
         tags.append('<span class="tag video">VIDEO</span>')
 
-    if mostrar_velocidade and p.get("por_dia") is not None:
-        numero = f'<div class="vel">{p["por_dia"]} <small>saves/dia</small></div>'
+    vel = p.get("por_dia")
+    if mostrar_velocidade and vel is not None:
+        numero = f'<div class="vel">{vel} <small>saves/dia</small></div>'
     else:
         numero = f'<div class="vel azul">{p["saves"]:,} <small>saves</small></div>'.replace(",", ".")
+        if vel is not None and vel > 0:
+            numero += f'<div class="sobe">+{vel}/dia</div>'
 
     destino = ""
     if p.get("link"):
         destino = (f'<a class="mini" href="{e(p["link"])}" target="_blank" '
                    f'rel="noopener">ir ao destino &rarr;</a>')
 
+    # atributos usados pelo seletor de ordenacao
+    d_vel = vel if vel is not None else -1
+    d_idade = p["idade"] if p.get("idade") is not None else 99999
+
     return f"""
-    <div class="pin" data-nicho="{e(p["palavra"])}">
+    <div class="pin" data-nicho="{e(p["palavra"])}"
+         data-saves="{p["saves"]}" data-vel="{d_vel}"
+         data-coment="{p.get("comentarios", 0)}" data-idade="{d_idade}">
       <a class="thumb" href="{url_pin}" target="_blank" rel="noopener">
         <img loading="lazy" src="{e(p["imagem"])}" alt="">
       </a>
@@ -275,7 +285,7 @@ def montar(pins, sug):
             por_nicho[c["palavra"]].append(c)
     galeria = []
     for palavra in sorted(por_nicho):
-        melhores = sorted(por_nicho[palavra], key=lambda x: -x["saves"])[:10]
+        melhores = sorted(por_nicho[palavra], key=lambda x: -x["saves"])[:15]
         galeria.extend(melhores)
     nichos_galeria = sorted(por_nicho)
 
@@ -336,7 +346,7 @@ def montar(pins, sug):
     html_avisos = "".join(
         f'<div class="aviso {tipo}">{e(txt)}</div>' for tipo, txt in avisos)
 
-    chips = '<button class="chip on" data-f="__todos">todos</button>' + "".join(
+    chips = '<button class="chip on" data-f="__todos">GERAL</button>' + "".join(
         f'<button class="chip" data-f="{e(n)}">{e(n)}</button>' for n in nichos_galeria)
     grade_galeria = "".join(cartao_pin(p, mostrar_velocidade=False) for p in galeria) \
         or '<p class="dim">Sem imagens ainda.</p>'
@@ -398,6 +408,14 @@ overflow:hidden;text-decoration:none;color:inherit;display:block;transition:.15s
 .rodape{{font-size:10px;color:var(--dim);border-top:1px solid var(--linha);padding-top:6px;
 overflow:hidden;text-overflow:ellipsis;white-space:nowrap}}
 .legenda{{font-size:12px;color:var(--dim);margin-top:8px;line-height:1.6}}
+.ordenar{{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:12px 0 2px}}
+.rot{{font-size:10px;color:var(--dim);text-transform:uppercase;letter-spacing:.08em;margin-right:2px}}
+.ord{{background:transparent;border:1px solid var(--linha);color:var(--dim);font-size:11px;
+padding:5px 11px;border-radius:6px;cursor:pointer;font-family:inherit}}
+.ord:hover{{border-color:var(--verde);color:var(--txt)}}
+.ord.on{{background:var(--verde);border-color:var(--verde);color:#04180a;font-weight:600}}
+.sobe{{font-size:11px;color:var(--verde);font-weight:600;margin-top:-2px}}
+#contador{{font-size:11px;margin-top:8px}}
 .chips{{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0 4px}}
 .chip{{background:var(--card);border:1px solid var(--linha);color:var(--dim);
 font-size:11px;padding:5px 11px;border-radius:20px;cursor:pointer;font-family:inherit}}
@@ -442,8 +460,16 @@ muita gente postando e ninguem salvando.
 
 <h2>2. Galeria de criativos</h2>
 <p class="sub">Os pins mais salvos de cada nicho. Clique na imagem para abrir o pin no Pinterest.</p>
+<div class="ordenar">
+  <span class="rot">ordenar por</span>
+  <button class="ord on" data-o="saves">mais salvos</button>
+  <button class="ord" data-o="vel">subindo mais rapido</button>
+  <button class="ord" data-o="idade">mais recentes</button>
+  <button class="ord" data-o="coment">mais comentados</button>
+</div>
 <div class="chips">{chips}</div>
 <div class="grade" id="galeria">{grade_galeria}</div>
+<p class="dim" id="contador"></p>
 <p class="legenda">Use o filtro acima para ver um nicho por vez. Repare no
 <b>formato</b> marcado em cada card: no Pinterest, 2:3 e o padrao que a plataforma
 mais distribui. Se os campeoes de um nicho sao todos 1:2 longos, e sinal de que ali
@@ -478,16 +504,53 @@ a monetizacao ali e por anuncio e precisa de muito volume.</p>
 
 </div>
 <script>
-document.querySelectorAll(".chip").forEach(function(b){{
-  b.addEventListener("click", function(){{
-    document.querySelectorAll(".chip").forEach(function(x){{x.classList.remove("on")}});
-    b.classList.add("on");
-    var f = b.dataset.f;
-    document.querySelectorAll("#galeria .pin").forEach(function(c){{
-      c.style.display = (f === "__todos" || c.dataset.nicho === f) ? "" : "none";
+(function(){{
+  var grade = document.getElementById("galeria");
+  var contador = document.getElementById("contador");
+  var filtro = "__todos";
+  var ordem = "saves";
+
+  function aplicar(){{
+    var cards = Array.prototype.slice.call(grade.querySelectorAll(".pin"));
+
+    // ordena: idade e crescente (menor = mais novo), o resto e decrescente
+    cards.sort(function(a, b){{
+      var va = parseFloat(a.dataset[ordem]) || 0;
+      var vb = parseFloat(b.dataset[ordem]) || 0;
+      return ordem === "idade" ? va - vb : vb - va;
+    }});
+    cards.forEach(function(c){{ grade.appendChild(c); }});
+
+    // filtra
+    var visiveis = 0;
+    cards.forEach(function(c){{
+      var ok = (filtro === "__todos" || c.dataset.nicho === filtro);
+      c.style.display = ok ? "" : "none";
+      if (ok) visiveis++;
+    }});
+    contador.textContent = visiveis + " pins";
+  }}
+
+  document.querySelectorAll(".chip").forEach(function(b){{
+    b.addEventListener("click", function(){{
+      document.querySelectorAll(".chip").forEach(function(x){{ x.classList.remove("on"); }});
+      b.classList.add("on");
+      filtro = b.dataset.f;
+      aplicar();
     }});
   }});
-}});
+
+  document.querySelectorAll(".ord").forEach(function(b){{
+    b.addEventListener("click", function(){{
+      document.querySelectorAll(".ord").forEach(function(x){{ x.classList.remove("on"); }});
+      b.classList.add("on");
+      ordem = b.dataset.o;
+      aplicar();
+    }});
+  }});
+
+  aplicar();
+}})();
 </script>
 </body></html>"""
 
