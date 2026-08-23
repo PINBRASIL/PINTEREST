@@ -1,0 +1,52 @@
+name: Coleta diaria
+
+on:
+  schedule:
+    # 09:20 UTC = 06:20 no horario de Brasilia
+    - cron: "20 9 * * *"
+  workflow_dispatch:      # permite rodar na mao pelo botao "Run workflow"
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+jobs:
+  coletar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Instalar dependencia
+        run: pip install httpx
+
+      - name: Coletar do Pinterest
+        env:
+          PINTEREST_COOKIE: ${{ secrets.PINTEREST_COOKIE }}
+          PINTEREST_APP_VERSION: ${{ secrets.PINTEREST_APP_VERSION }}
+        run: python coletor.py
+
+      - name: Montar o painel
+        if: always()
+        run: python painel.py
+
+      - name: Salvar os dados
+        if: always()
+        run: |
+          git config user.name "robo"
+          git config user.email "robo@users.noreply.github.com"
+          git add dados painel.html
+          git diff --staged --quiet || git commit -m "coleta $(date +%F)"
+          git push
+
+      - name: Publicar o painel
+        if: always()
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: .
+          keep_files: true
