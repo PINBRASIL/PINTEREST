@@ -1,0 +1,50 @@
+# ESTE E O UNICO ARQUIVO QUE VOCE VAI EDITAR.
+#
+# Escreva uma palavra por linha. Sao as buscas que o robo vai
+# fazer no Pinterest todo dia, sempre as mesmas.
+#
+# Regras simples:
+#  - use entre 25 e 40 palavras (menos que isso nao gera padrao,
+#    mais que isso deixa a coleta lenta demais)
+#  - escreva como voce mesmo digitaria na busca do Pinterest
+#  - linhas que comecam com # sao ignoradas
+#  - troque poucas palavras por vez: cada palavra nova comeca
+#    do zero e leva 14 dias para virar dado util
+
+# --- moda feminina ---
+look feminino verao
+calca legging canelada
+conjunto fitness feminino
+vestido midi
+saia longa fluida
+tricot feminino
+look academia feminino
+calca jeans flare
+blusa cropped
+
+# --- casa e organizacao ---
+organizacao de geladeira
+organizacao de armario pequeno
+decoracao quarto pequeno
+organizacao de cozinha
+home office pequeno
+
+# --- receitas ---
+receitas fitness
+receita low carb
+marmita fitness
+receita barata para o mes
+lanche saudavel
+bolo caseiro simples
+
+# --- beleza ---
+unhas decoradas
+cabelo cacheado cuidados
+maquiagem natural dia a dia
+skincare pele oleosa
+
+# --- dinheiro e rotina ---
+economia domestica
+planilha financeira
+renda extra em casa
+planejamento semanal
