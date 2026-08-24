@@ -117,15 +117,23 @@ def resumo_palavras(calc, pins, churn):
     for palavra, itens in por_palavra.items():
         vels = [i["por_dia"] for i in itens if i["por_dia"] is not None]
         saves = saves_por_palavra[palavra]
+        media = round(statistics.mean(vels), 1) if vels else None
+        mediana = round(statistics.median(vels), 1) if vels else None
+        # quantos pins do nicho estao de fato subindo, nao so a media
+        subindo = sum(1 for v in vels if v > 0)
         linhas.append({
             "palavra": palavra,
-            "velocidade": round(statistics.mean(vels), 1) if vels else None,
+            "velocidade": media,
+            "mediana": mediana,
+            "subindo": subindo,
+            "total_vel": len(vels),
             "churn": churn.get(palavra),
             "saves_medio": int(statistics.median(saves)) if saves else 0,
             "topo": max(saves) if saves else 0,
             "pins": len(itens),
         })
-    linhas.sort(key=lambda x: (x["velocidade"] is None, -(x["velocidade"] or 0)))
+    # ordena pela mediana: e ela que diz se o nicho inteiro se move
+    linhas.sort(key=lambda x: (x["mediana"] is None, -(x["mediana"] or 0)))
     return linhas
 
 
@@ -245,7 +253,8 @@ def cartao_pin(p, mostrar_velocidade=True):
     return f"""
     <div class="pin" data-nicho="{e(p["palavra"])}"
          data-saves="{p["saves"]}" data-vel="{d_vel}"
-         data-coment="{p.get("comentarios", 0)}" data-idade="{d_idade}">
+         data-coment="{p.get("comentarios", 0)}" data-idade="{d_idade}"
+         data-link="{1 if p.get("link") else 0}">
       <a class="thumb" href="{url_pin}" target="_blank" rel="noopener">
         <img loading="lazy" src="{e(p["imagem"])}" alt="">
       </a>
@@ -317,15 +326,17 @@ def montar(pins, sug):
     max_vel = max([p["velocidade"] or 0 for p in palavras], default=1) or 1
     max_churn = max([p["churn"] or 0 for p in palavras], default=1) or 1
 
+    max_med = max([p["mediana"] or 0 for p in palavras], default=1) or 1
     linhas_palavras = "".join(f"""
       <tr>
         <td class="nome">{e(p["palavra"])}</td>
-        <td class="n">{p["velocidade"] if p["velocidade"] is not None else "-"}
-            {barra(p["velocidade"], max_vel)}</td>
+        <td class="n forte">{p["mediana"] if p["mediana"] is not None else "-"}
+            {barra(p["mediana"], max_med)}</td>
+        <td class="n dim">{p["velocidade"] if p["velocidade"] is not None else "-"}</td>
+        <td class="n dim">{p["subindo"]}/{p["total_vel"]}</td>
         <td class="n">{str(p["churn"]) + "%" if p["churn"] is not None else "-"}
             {barra(p["churn"], max_churn, "var(--azul)")}</td>
-        <td class="n">{p["saves_medio"]}</td>
-        <td class="n dim">{p["pins"]}</td>
+        <td class="n dim">{p["saves_medio"]}</td>
       </tr>""" for p in palavras)
 
     linhas_dom = "".join(f"""
@@ -415,6 +426,10 @@ padding:5px 11px;border-radius:6px;cursor:pointer;font-family:inherit}}
 .ord:hover{{border-color:var(--verde);color:var(--txt)}}
 .ord.on{{background:var(--verde);border-color:var(--verde);color:#04180a;font-weight:600}}
 .sobe{{font-size:11px;color:var(--verde);font-weight:600;margin-top:-2px}}
+.ord.alt{{margin-left:8px;border-color:var(--amarelo);color:var(--amarelo)}}
+.ord.alt:hover{{border-color:var(--amarelo);color:#f0c674}}
+.ord.alt.on{{background:var(--amarelo);border-color:var(--amarelo);color:#1a1200;font-weight:600}}
+td.forte{{font-weight:600}}
 #contador{{font-size:11px;margin-top:8px}}
 .chips{{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0 4px}}
 .chip{{background:var(--card);border:1px solid var(--linha);color:var(--dim);
@@ -445,17 +460,22 @@ a.thumb{{display:block}}
 <h2>1. Onde vale a pena entrar</h2>
 <p class="sub">Ordenado pelos nichos com audiencia mais ativa.</p>
 <table>
-<tr><th>Nicho</th><th class="n">Velocidade</th><th class="n">Renovacao</th>
-<th class="n">Saves tipico</th><th class="n">Pins</th></tr>
+<tr><th>Nicho</th><th class="n">Mediana</th><th class="n">Media</th>
+<th class="n">Subindo</th><th class="n">Renovacao</th><th class="n">Saves tipico</th></tr>
 {linhas_palavras}
 </table>
 <p class="legenda">
-<b>Velocidade</b> = quantos saves por dia os pins desse nicho ganham. Alto = publico engajado.<br>
-<b>Renovacao</b> = quanto da primeira pagina de busca troca por dia. Alto = o Pinterest esta
-dando espaco para conteudo novo, da para entrar. Perto de zero = os mesmos pins antigos
-travaram o topo e voce nao fura isso.<br>
-<b>O melhor nicho tem os dois numeros altos.</b> Renovacao alta com velocidade baixa =
-muita gente postando e ninguem salvando.
+<b>Mediana</b> = a velocidade do pin do meio. E o numero honesto: diz se o nicho
+<i>inteiro</i> se move.<br>
+<b>Media</b> = puxada por qualquer pin viral. Se a media for muito maior que a mediana,
+o nicho tem um ou dois pins carregando o resto - oportunidade menor do que parece.<br>
+<b>Subindo</b> = quantos pins do nicho ganharam saves, de quantos foram medidos.
+5/100 e um pin sortudo. 60/100 e um nicho em movimento.<br>
+<b>Renovacao</b> = quanto da primeira pagina de busca troca por dia. Alto = o Pinterest
+esta dando espaco para conteudo novo. Perto de zero = os mesmos pins antigos travaram o topo.<br>
+<b>Atencao:</b> nao compare moda com receita nesta tabela. Pin de moda quase nao acumula
+save (a pessoa clica e vai comprar), receita e organizacao acumulam muito (a pessoa guarda
+para depois). Compare cada categoria com ela mesma.
 </p>
 
 <h2>2. Galeria de criativos</h2>
@@ -466,6 +486,7 @@ muita gente postando e ninguem salvando.
   <button class="ord" data-o="vel">subindo mais rapido</button>
   <button class="ord" data-o="idade">mais recentes</button>
   <button class="ord" data-o="coment">mais comentados</button>
+  <button class="ord alt" id="soLink">so quem monetiza</button>
 </div>
 <div class="chips">{chips}</div>
 <div class="grade" id="galeria">{grade_galeria}</div>
@@ -509,6 +530,7 @@ a monetizacao ali e por anuncio e precisa de muito volume.</p>
   var contador = document.getElementById("contador");
   var filtro = "__todos";
   var ordem = "saves";
+  var soLink = false;
 
   function aplicar(){{
     var cards = Array.prototype.slice.call(grade.querySelectorAll(".pin"));
@@ -525,6 +547,7 @@ a monetizacao ali e por anuncio e precisa de muito volume.</p>
     var visiveis = 0;
     cards.forEach(function(c){{
       var ok = (filtro === "__todos" || c.dataset.nicho === filtro);
+      if (ok && soLink && c.dataset.link !== "1") ok = false;
       c.style.display = ok ? "" : "none";
       if (ok) visiveis++;
     }});
@@ -540,9 +563,16 @@ a monetizacao ali e por anuncio e precisa de muito volume.</p>
     }});
   }});
 
-  document.querySelectorAll(".ord").forEach(function(b){{
+  var btnLink = document.getElementById("soLink");
+  btnLink.addEventListener("click", function(){{
+    soLink = !soLink;
+    btnLink.classList.toggle("on", soLink);
+    aplicar();
+  }});
+
+  document.querySelectorAll(".ord[data-o]").forEach(function(b){{
     b.addEventListener("click", function(){{
-      document.querySelectorAll(".ord").forEach(function(x){{ x.classList.remove("on"); }});
+      document.querySelectorAll(".ord[data-o]").forEach(function(x){{ x.classList.remove("on"); }});
       b.classList.add("on");
       ordem = b.dataset.o;
       aplicar();

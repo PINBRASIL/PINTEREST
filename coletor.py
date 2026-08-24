@@ -157,7 +157,27 @@ def ler_pin(item, posicao, palavra):
         or item.get("repin_count") or 0
     coment = cavar(item, "aggregated_pin_data", "comment_count", padrao=item.get("comment_count") or 0)
 
-    titulo = (item.get("grid_title") or item.get("title") or item.get("seo_title") or "").strip()
+    # o Pinterest guarda o titulo em lugares diferentes dependendo do tipo de pin.
+    # tenta todos, do mais confiavel para o menos.
+    titulo = ""
+    for campo in ("grid_title", "title", "seo_title", "closeup_unified_title"):
+        v = item.get(campo)
+        if isinstance(v, str) and v.strip():
+            titulo = v.strip()
+            break
+    if not titulo:
+        for caminho in (("rich_summary", "display_name"),
+                        ("story_pin_data", "metadata", "pin_title"),
+                        ("pin_join", "seo_title")):
+            v = cavar(item, *caminho)
+            if isinstance(v, str) and v.strip():
+                titulo = v.strip()
+                break
+    if not titulo:
+        # ultimo recurso: primeira frase da descricao ou o texto alternativo
+        v = item.get("description") or item.get("auto_alt_text") or ""
+        if isinstance(v, str):
+            titulo = v.strip()
     titulo = re.sub(r"\s+", " ", titulo)[:200]
 
     return {
